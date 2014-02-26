@@ -10,9 +10,11 @@ determining k independent hash functions efficiently.
 ## Usage is simple:
 
 ```
-N := <number insertions>
-B := <bits-per-slot>
-FP := <max-false-positive-prob>
+const (
+      N = <number insertions>
+      B = <bits-per-slot>
+      FP = <max-false-positive-prob>
+)
 
 f, err := NewFilter(N, B, FP)
 if err != nil {
