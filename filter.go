@@ -42,26 +42,10 @@ func probFalsePositive(N uint32, K uint32, M uint32) float64 {
 	return math.Pow(pSet, float64(K))
 }
 
-// computeOptimalValues computes minimum number of slots such that
-// the maximum false positive probability (maxFP) is guaranteed.
-// Returns the number of slots (M) as well as optimal number of hashes (K).
-//
-// Math from: http://en.wikipedia.org/wiki/Bloom_filter
-func computeOptimalValues(N uint32, maxFP float64) (uint32, uint32) {
-	logN2 := math.Log(2)
-	M := uint32(math.Ceil(-float64(N) * math.Log(maxFP) / (logN2 * logN2)))
-	K1 := uint32(math.Ceil((float64(M) / float64(N)) * logN2))
-	K2 := uint32(math.Floor((float64(M) / float64(N)) * logN2))
-	if probFalsePositive(N, K1, M) < probFalsePositive(N, K2, M) {
-		return M, K1
-	}
-	return M, K2
-}
-
-// newFilter allocates and returns a new filter with expected number of
+// NewFilter allocates and returns a new filter with expected number of
 // insertions N, Number of bits per slot B, and expected value of a false
 // positive < maxFP. Number of bits must be 0 < B <= 8.
-func newFilter(N uint32, B uint32, maxFP float64) (*Filter, error) {
+func NewFilter(N uint32, B uint32, maxFP float64) (*Filter, error) {
 	if N == 0 {
 		return nil, fmt.Errorf("number of insertions (N) must be > 0")
 	}
@@ -83,6 +67,80 @@ func newFilter(N uint32, B uint32, maxFP float64) (*Filter, error) {
 		Data:     bytes,
 		hasher:   newHasher(),
 	}, nil
+}
+
+// AddKey adds the key to the Filter.
+func (f *Filter) AddKey(key string) {
+	f.hasher.hashKey(key)
+	for i := uint32(0); i < f.K; i++ {
+		slot := f.hasher.getHash(i) % f.M
+		f.incrementSlot(slot, 1)
+	}
+	f.N++
+}
+
+// HasKey checks whether key has been added to the Filter. The chance this
+// method returns an incorrect value is given by ProbFalsePositive().
+func (f *Filter) HasKey(key string) bool {
+	f.hasher.hashKey(key)
+	for i := uint32(0); i < f.K; i++ {
+		slot := f.hasher.getHash(i) % f.M
+		if f.getSlot(slot) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// RemoveKey removes a key by first verifying it's likely been seen and then
+// decrementing each of the slots it hashes to. Returns true if the key was
+// "removed"; false otherwise.
+func (f *Filter) RemoveKey(key string) bool {
+	if f.HasKey(key) {
+		f.hasher.hashKey(key)
+		for i := uint32(0); i < f.K; i++ {
+			slot := f.hasher.getHash(i) % f.M
+			f.incrementSlot(slot, -1)
+		}
+		f.R++
+		return true
+	}
+	return false
+}
+
+// probFalsePositive returns the probability the Filter returns a false
+// positive.
+func (f *Filter) probFalsePositive() float64 {
+	if f.R != 0 {
+		return probFalsePositive(f.approximateInsertions(), f.K, f.M)
+	}
+	return probFalsePositive(f.N, f.K, f.M)
+}
+
+// approximateInsertions determines the approximate number of items
+// inserted into the Filter after removals.
+func (f *Filter) approximateInsertions() uint32 {
+	count := uint32(0)
+	for i := uint32(0); i < f.M; i++ {
+		count += f.getSlot(i)
+	}
+	return count / f.K
+}
+
+// computeOptimalValues computes minimum number of slots such that
+// the maximum false positive probability (maxFP) is guaranteed.
+// Returns the number of slots (M) as well as optimal number of hashes (K).
+//
+// Math from: http://en.wikipedia.org/wiki/Bloom_filter
+func computeOptimalValues(N uint32, maxFP float64) (uint32, uint32) {
+	logN2 := math.Log(2)
+	M := uint32(math.Ceil(-float64(N) * math.Log(maxFP) / (logN2 * logN2)))
+	K1 := uint32(math.Ceil((float64(M) / float64(N)) * logN2))
+	K2 := uint32(math.Floor((float64(M) / float64(N)) * logN2))
+	if probFalsePositive(N, K1, M) < probFalsePositive(N, K2, M) {
+		return M, K1
+	}
+	return M, K2
 }
 
 // getBits gets the specified bits by bit offset and bit length.
@@ -129,62 +187,4 @@ func (f *Filter) incrementSlot(slot uint32, incr int32) {
 // getSlot returns the slot value.
 func (f *Filter) getSlot(slot uint32) uint32 {
 	return f.getBits(slot*f.B, f.B)
-}
-
-// addKey adds the key to the Filter.
-func (f *Filter) addKey(key string) {
-	f.hasher.hashKey(key)
-	for i := uint32(0); i < f.K; i++ {
-		slot := f.hasher.getHash(i) % f.M
-		f.incrementSlot(slot, 1)
-	}
-	f.N++
-}
-
-// hasKey checks whether key has been added to the Filter. The chance this
-// method returns an incorrect value is given by ProbFalsePositive().
-func (f *Filter) hasKey(key string) bool {
-	f.hasher.hashKey(key)
-	for i := uint32(0); i < f.K; i++ {
-		slot := f.hasher.getHash(i) % f.M
-		if f.getSlot(slot) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// removeKey removes a key by first verifying it's likely been seen and then
-// decrementing each of the slots it hashes to. Returns true if the key was
-// "removed"; false otherwise.
-func (f *Filter) removeKey(key string) bool {
-	if f.hasKey(key) {
-		f.hasher.hashKey(key)
-		for i := uint32(0); i < f.K; i++ {
-			slot := f.hasher.getHash(i) % f.M
-			f.incrementSlot(slot, -1)
-		}
-		f.R++
-		return true
-	}
-	return false
-}
-
-// probFalsePositive returns the probability the Filter returns a false
-// positive.
-func (f *Filter) probFalsePositive() float64 {
-	if f.R != 0 {
-		return probFalsePositive(f.approximateInsertions(), f.K, f.M)
-	}
-	return probFalsePositive(f.N, f.K, f.M)
-}
-
-// approximateInsertions determines the approximate number of items
-// inserted into the Filter after removals.
-func (f *Filter) approximateInsertions() uint32 {
-	count := uint32(0)
-	for i := uint32(0); i < f.M; i++ {
-		count += f.getSlot(i)
-	}
-	return count / f.K
 }

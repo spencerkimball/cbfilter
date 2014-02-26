@@ -14,12 +14,12 @@ N := <number insertions>
 B := <bits-per-slot>
 FP := <max-false-positive-prob>
 
-if f, err := newFilter(N, B, FP); err != nil {
+if f, err := NewFilter(N, B, FP); err != nil {
    log.Error("error creating filter:", err)
    return
 }
 
-f.addKey("a")
-f.hasKey("a")
-f.removeKey("a")
+f.AddKey("a")
+f.HasKey("a")
+f.RemoveKey("a")
 ```
