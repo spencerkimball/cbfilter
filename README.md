@@ -14,7 +14,8 @@ N := <number insertions>
 B := <bits-per-slot>
 FP := <max-false-positive-prob>
 
-if f, err := NewFilter(N, B, FP); err != nil {
+f, err := NewFilter(N, B, FP)
+if err != nil {
    log.Error("error creating filter:", err)
    return
 }
